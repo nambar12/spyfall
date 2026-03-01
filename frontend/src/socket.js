@@ -4,13 +4,10 @@
  */
 
 import { io } from 'socket.io-client';
-import { setState, resetState } from './state.js';
+import { getState, setState, resetState } from './state.js';
 import { showToast } from './toast.js';
 import { session, pushRoomUrl, clearRoomUrl } from './session.js';
 
-// No URL → Socket.io connects to window.location.origin.
-// In dev, Vite's proxy forwards /socket.io → http://localhost:3001.
-// In production, point VITE_BACKEND_URL to a separate backend if needed.
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL; // undefined = same origin
 
 export const socket = io(BACKEND_URL, {
@@ -24,6 +21,20 @@ export const socket = io(BACKEND_URL, {
 
 socket.on('connect', () => {
   setState({ socketId: socket.id });
+
+  // ── Auto-rejoin after socket.io reconnects ──────────────────────────────
+  // When socket.io reconnects (e.g. after backgrounding the app), the server
+  // gets a brand-new socket with no room association. We must re-emit joinRoom
+  // so the server remaps our new socket ID onto our existing player slot and
+  // cancels the disconnect grace-period timer.
+  //
+  // We only do this when we already have a room in state (so we don't
+  // interfere with the normal first-connect flow from the home page).
+  const saved = session.load();
+  const { room } = getState();
+  if (room && saved) {
+    socket.emit('joinRoom', { code: saved.roomCode, name: saved.playerName });
+  }
 });
 
 socket.on('disconnect', () => {
@@ -51,20 +62,11 @@ socket.on('roomState', (room) => {
   };
 
   const updates = { room };
-
-  if (pageMap[room.phase]) {
-    updates.page = pageMap[room.phase];
-  }
-
-  // Clear private role when returning to lobby.
-  if (room.phase === 'lobby') {
-    updates.myRole = null;
-  }
+  if (pageMap[room.phase]) updates.page = pageMap[room.phase];
+  if (room.phase === 'lobby') updates.myRole = null;
 
   setState(updates);
 
-  // Persist session so a page refresh can rejoin.
-  // Find ourselves by socket.id — works for both first join and reconnection.
   const me = room.players.find((p) => p.id === socket.id);
   if (me) session.save(room.code, me.name);
 });
@@ -87,18 +89,19 @@ socket.on('roomClosed', ({ reason }) => {
 // ── Connection errors ─────────────────────────────────────────────────────────
 
 socket.on('connect_error', (err) => {
-  showToast(`Cannot reach server — is the backend running? (${err.message})`, 'error', 6000);
-});
-
-socket.on('reconnect_failed', () => {
-  showToast('Could not connect to the server after several attempts.', 'error', 6000);
+  // Suppress noisy toasts while reconnecting mid-game — the player list
+  // already shows who is offline. Only show the full error on the home page
+  // where there is no other visual feedback.
+  const { room } = getState();
+  if (!room) {
+    showToast(`Cannot reach server — is the backend running? (${err.message})`, 'error', 6000);
+  }
 });
 
 // ── Game errors ───────────────────────────────────────────────────────────────
 
 socket.on('error', ({ message }) => {
   showToast(message, 'error');
-  // If the room we tried to (re)join no longer exists, clean up navigation state.
   if (message === 'Room not found — check the code') {
     session.clear();
     clearRoomUrl();
@@ -107,9 +110,9 @@ socket.on('error', ({ message }) => {
 });
 
 // ── Reconnect immediately when the user returns to the tab ───────────────────
-// Mobile browsers suspend WebSockets when an app goes to the background.
-// visibilitychange fires reliably when the user switches back, giving us
-// a hook to reconnect before Socket.io's own backoff timer would fire.
+// Mobile browsers suspend WebSockets/timers when an app is backgrounded.
+// visibilitychange fires reliably on return, triggering an immediate
+// reconnect attempt instead of waiting for Socket.io's backoff timer.
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && !socket.connected) {
     socket.connect();

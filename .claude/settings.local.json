@@ -19,7 +19,8 @@
       "Bash(cd /infrastructure/nambar/spyfall/backend && /infrastructure/nambar/nodejs/bin/npm install ioredis 2>&1 | tail -5)",
       "Bash(cd /infrastructure/nambar/spyfall && timeout 4 /infrastructure/nambar/nodejs/bin/node backend/src/server.js 2>&1 || true)",
       "Bash(/infrastructure/nambar/nodejs/bin/npm run build 2>&1 | tail -5)",
-      "Bash(/infrastructure/nambar/nodejs/bin/npm run build 2>&1 | tail -4)"
+      "Bash(/infrastructure/nambar/nodejs/bin/npm run build 2>&1 | tail -4)",
+      "Bash(git push 2>&1)"
     ]
   }
 }
