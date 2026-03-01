@@ -2,8 +2,13 @@
  * Socket.io event handlers.
  *
  * All business logic delegates to pure functions in core/gameLogic.js.
- * The store is injected — memoryStore (dev) or redisStore (prod) — and all
- * store methods are awaited so either implementation works transparently.
+ * The store is injected — memoryStore (dev) or redisStore (prod).
+ *
+ * Disconnect policy (handles mobile apps going to background):
+ *   Host disconnects      → 45-second grace period before the room is closed.
+ *   Player disconnects in lobby → 30-second grace period before removal.
+ *   Player disconnects in-game  → marked offline; stays in assignments; can rejoin.
+ * Any reconnection within the grace period cancels the timer.
  */
 
 import {
@@ -22,6 +27,25 @@ import {
 } from '../core/gameLogic.js';
 
 // ---------------------------------------------------------------------------
+// Module-level grace-period timers (in-process; survive reconnects, not restarts)
+// ---------------------------------------------------------------------------
+
+/** roomCode → timerId  —  host disconnect timers */
+const hostTimers = new Map();
+
+/** `${roomCode}:${playerName}` → timerId  —  lobby-player disconnect timers */
+const playerTimers = new Map();
+
+function cancelHostTimer(code) {
+  if (hostTimers.has(code)) { clearTimeout(hostTimers.get(code)); hostTimers.delete(code); }
+}
+
+function cancelPlayerTimer(code, name) {
+  const key = `${code}:${name}`;
+  if (playerTimers.has(key)) { clearTimeout(playerTimers.get(key)); playerTimers.delete(key); }
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -33,11 +57,9 @@ function toPublicRoom(room) {
     config:  room.config,
     phase:   room.phase,
   };
-
   if (room.phase === 'submission') {
     base.submittedIds = Object.keys(room.round?.submissions ?? {});
   }
-
   if (room.phase === 'reveal') {
     base.reveal = {
       place:       room.round.place,
@@ -45,7 +67,6 @@ function toPublicRoom(room) {
       submitterId: room.round.submitterId ?? null,
     };
   }
-
   return base;
 }
 
@@ -56,8 +77,8 @@ function broadcastRoomState(io, room) {
 function broadcastRoundStart(io, room) {
   broadcastRoomState(io, room);
   for (const player of room.players) {
-    const assignment = room.round.assignments[player.id];
-    if (assignment) io.to(player.id).emit('roleAssigned', assignment);
+    const a = room.round.assignments[player.id];
+    if (a) io.to(player.id).emit('roleAssigned', a);
   }
 }
 
@@ -67,7 +88,6 @@ function broadcastRoundStart(io, room) {
 
 export function registerHandlers(io, socket, store) {
 
-  // Async-safe helpers — throw on error, caller catches.
   async function getRoom(code) {
     const room = await store.getRoom(code ?? socket.data.roomCode);
     if (!room) throw new Error('Room not found — check the code');
@@ -80,7 +100,6 @@ export function registerHandlers(io, socket, store) {
     return room;
   }
 
-  // Wraps async handlers so uncaught rejections emit an 'error' event to the socket.
   function safe(handler) {
     return (...args) => {
       Promise.resolve(handler(...args)).catch((err) => {
@@ -109,13 +128,13 @@ export function registerHandlers(io, socket, store) {
   }));
 
   // -------------------------------------------------------------------------
-  // Join room  (also handles reconnection after page refresh)
+  // Join room  (also handles reconnection after backgrounding / page refresh)
   // -------------------------------------------------------------------------
   socket.on('joinRoom', safe(async ({ code, name } = {}) => {
     if (!name?.trim()) throw new Error('Name is required');
 
-    const upperCode  = code?.toUpperCase().trim();
-    let   room       = await store.getRoom(upperCode);
+    const upperCode   = code?.toUpperCase().trim();
+    let   room        = await store.getRoom(upperCode);
     if (!room) throw new Error('Room not found — check the code');
 
     const trimmedName = name.trim();
@@ -124,8 +143,12 @@ export function registerHandlers(io, socket, store) {
     );
 
     if (existing) {
-      // ── Reconnection path ────────────────────────────────────────────────
+      // ── Reconnection path ──────────────────────────────────────────────
       if (existing.connected) throw new Error('Someone with that name is already connected');
+
+      // Cancel any pending disconnect timers for this player.
+      cancelHostTimer(upperCode);
+      cancelPlayerTimer(upperCode, trimmedName);
 
       room = remapPlayerId(room, existing.id, socket.id);
       await store.setRoom(upperCode, room);
@@ -142,7 +165,7 @@ export function registerHandlers(io, socket, store) {
       return;
     }
 
-    // ── New player path ──────────────────────────────────────────────────
+    // ── New player path ────────────────────────────────────────────────
     if (room.phase !== 'lobby') throw new Error('Game already in progress');
     if (room.players.length >= 12) throw new Error('Room is full (max 12 players)');
 
@@ -157,12 +180,13 @@ export function registerHandlers(io, socket, store) {
   }));
 
   // -------------------------------------------------------------------------
-  // Start game (from lobby)
+  // Start game
   // -------------------------------------------------------------------------
   socket.on('startGame', safe(async () => {
     let room = await getHostRoom();
     if (room.phase !== 'lobby') throw new Error('Game is already running');
-    if (room.players.length < 3) throw new Error('Need at least 3 players to start');
+    if (room.players.filter(p => p.connected).length < 3)
+      throw new Error('Need at least 3 connected players to start');
 
     if (room.config.mode === 'player') {
       room = beginSubmissionPhase(room);
@@ -176,7 +200,7 @@ export function registerHandlers(io, socket, store) {
   }));
 
   // -------------------------------------------------------------------------
-  // Submit a place (player mode — submission phase)
+  // Submit place
   // -------------------------------------------------------------------------
   socket.on('submitPlace', safe(async ({ place } = {}) => {
     if (!place?.trim()) throw new Error('Place name cannot be empty');
@@ -191,7 +215,7 @@ export function registerHandlers(io, socket, store) {
   }));
 
   // -------------------------------------------------------------------------
-  // Start round (host, after all players submitted in player mode)
+  // Start round
   // -------------------------------------------------------------------------
   socket.on('startRound', safe(async () => {
     let room = await getHostRoom();
@@ -204,7 +228,7 @@ export function registerHandlers(io, socket, store) {
   }));
 
   // -------------------------------------------------------------------------
-  // Reveal (host, during playing phase)
+  // Reveal
   // -------------------------------------------------------------------------
   socket.on('revealRound', safe(async () => {
     let room = await getHostRoom();
@@ -216,7 +240,7 @@ export function registerHandlers(io, socket, store) {
   }));
 
   // -------------------------------------------------------------------------
-  // Next round / back to lobby (host, reveal phase)
+  // Next round
   // -------------------------------------------------------------------------
   socket.on('nextRound', safe(async () => {
     let room = await getHostRoom();
@@ -228,7 +252,7 @@ export function registerHandlers(io, socket, store) {
   }));
 
   // -------------------------------------------------------------------------
-  // Disconnect
+  // Disconnect  — grace-period policy
   // -------------------------------------------------------------------------
   socket.on('disconnect', async () => {
     const code = socket.data.roomCode;
@@ -238,18 +262,52 @@ export function registerHandlers(io, socket, store) {
       const room = await store.getRoom(code);
       if (!room) return;
 
+      const player = room.players.find((p) => p.id === socket.id);
+      if (!player) return;
+
+      // Mark the player as offline immediately so others see it.
+      const updated = setPlayerConnected(room, socket.id, false);
+      await store.setRoom(code, updated);
+      broadcastRoomState(io, updated);
+
       if (room.hostId === socket.id) {
-        io.to(code).emit('roomClosed', { reason: 'The host left the game' });
-        await store.deleteRoom(code);
+        // ── Host disconnected — 45-second grace period ───────────────────
+        console.log(`[room ${code}] host disconnected, starting 45s grace period`);
+        const timerId = setTimeout(async () => {
+          hostTimers.delete(code);
+          try {
+            const current = await store.getRoom(code);
+            if (!current) return;
+            const hostBack = current.players.find((p) => p.isHost && p.connected);
+            if (!hostBack) {
+              console.log(`[room ${code}] host did not return, closing room`);
+              io.to(code).emit('roomClosed', { reason: 'The host disconnected' });
+              await store.deleteRoom(code);
+            }
+          } catch (e) { console.error('[hostTimer]', e.message); }
+        }, 45_000);
+        hostTimers.set(code, timerId);
+
       } else if (room.phase === 'lobby') {
-        const updated = removePlayer(room, socket.id);
-        await store.setRoom(code, updated);
-        broadcastRoomState(io, updated);
-      } else {
-        const updated = setPlayerConnected(room, socket.id, false);
-        await store.setRoom(code, updated);
-        broadcastRoomState(io, updated);
+        // ── Lobby player — 30-second grace period, then remove ───────────
+        const timerKey = `${code}:${player.name}`;
+        const timerId = setTimeout(async () => {
+          playerTimers.delete(timerKey);
+          try {
+            const current = await store.getRoom(code);
+            if (!current) return;
+            const p = current.players.find((pl) => pl.name === player.name);
+            if (p && !p.connected) {
+              const pruned = removePlayer(current, p.id);
+              await store.setRoom(code, pruned);
+              broadcastRoomState(io, pruned);
+            }
+          } catch (e) { console.error('[playerTimer]', e.message); }
+        }, 30_000);
+        playerTimers.set(timerKey, timerId);
       }
+      // In-game non-host: stays disconnected indefinitely; can rejoin.
+
     } catch (err) {
       console.error('[disconnect]', err.message);
     }

@@ -15,7 +15,11 @@
       "Bash(curl -s http://localhost:3001/health 2>/dev/null || echo \"server not running \\(expected in test\\)\")",
       "Bash(/infrastructure/nambar/nodejs/bin/node -e \"\nimport { existsSync } from 'fs';\nimport { fileURLToPath } from 'url';\nimport { dirname, join } from 'path';\nconst d = dirname\\(fileURLToPath\\(import.meta.url\\)\\);\nconst dist = join\\(d, 'backend/src/../../frontend/dist'\\);\nconsole.log\\('dist path:', dist\\);\nconsole.log\\('exists:', existsSync\\(dist\\)\\);\n\" --input-type=module 2>&1)",
       "Bash(/infrastructure/nambar/nodejs/bin/npm run build 2>&1 | tail -8)",
-      "Bash(/infrastructure/nambar/nodejs/bin/npm run build 2>&1 | tail -6)"
+      "Bash(/infrastructure/nambar/nodejs/bin/npm run build 2>&1 | tail -6)",
+      "Bash(cd /infrastructure/nambar/spyfall/backend && /infrastructure/nambar/nodejs/bin/npm install ioredis 2>&1 | tail -5)",
+      "Bash(cd /infrastructure/nambar/spyfall && timeout 4 /infrastructure/nambar/nodejs/bin/node backend/src/server.js 2>&1 || true)",
+      "Bash(/infrastructure/nambar/nodejs/bin/npm run build 2>&1 | tail -5)",
+      "Bash(/infrastructure/nambar/nodejs/bin/npm run build 2>&1 | tail -4)"
     ]
   }
 }

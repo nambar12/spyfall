@@ -15,38 +15,19 @@ const BACKEND_URL = import.meta.env.VITE_BACKEND_URL; // undefined = same origin
 
 export const socket = io(BACKEND_URL, {
   autoConnect: false,
-  reconnectionAttempts: 10,   // survive a ~30s cold-start boot
-  reconnectionDelay: 2000,    // start at 2 s between attempts
-  reconnectionDelayMax: 8000, // cap at 8 s
+  reconnectionAttempts: Infinity, // never give up — mobile browsers can suspend for a long time
+  reconnectionDelay: 1000,
+  reconnectionDelayMax: 5000,
 });
-
-// ── Keep-alive (Render free tier) ────────────────────────────────────────────
-// Render spins down after 15 min with no HTTP traffic; WebSocket pings don't
-// count. A lightweight fetch to /health every 4 min resets that timer.
-// Only runs in the production build (import.meta.env.PROD is false in dev).
-
-let _keepAliveTimer = null;
-
-function startKeepAlive() {
-  if (!import.meta.env.PROD) return;
-  stopKeepAlive();
-  _keepAliveTimer = setInterval(() => fetch('/health').catch(() => {}), 3000);
-}
-
-function stopKeepAlive() {
-  if (_keepAliveTimer) { clearInterval(_keepAliveTimer); _keepAliveTimer = null; }
-}
 
 // ── Connection lifecycle ─────────────────────────────────────────────────────
 
 socket.on('connect', () => {
   setState({ socketId: socket.id });
-  startKeepAlive();
 });
 
 socket.on('disconnect', () => {
   setState({ socketId: null });
-  stopKeepAlive();
 });
 
 // ── Room creation / joining ──────────────────────────────────────────────────
@@ -122,6 +103,16 @@ socket.on('error', ({ message }) => {
     session.clear();
     clearRoomUrl();
     setState({ page: 'home', prefillCode: null });
+  }
+});
+
+// ── Reconnect immediately when the user returns to the tab ───────────────────
+// Mobile browsers suspend WebSockets when an app goes to the background.
+// visibilitychange fires reliably when the user switches back, giving us
+// a hook to reconnect before Socket.io's own backoff timer would fire.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && !socket.connected) {
+    socket.connect();
   }
 });
 
