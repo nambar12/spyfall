@@ -1,0 +1,12 @@
+{
+  "name": "spyfall",
+  "private": true,
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "build":        "npm install --prefix frontend && npm run build --prefix frontend",
+    "postinstall":  "npm install --prefix backend",
+    "start":        "node backend/src/server.js",
+    "dev:backend":  "cd backend  && node --watch src/server.js",
+    "dev:frontend": "cd frontend && npx vite"
+  }
+}

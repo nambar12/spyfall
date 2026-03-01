@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd /infrastructure/nambar/spyfall/backend && ~/nodejs/bin/npm install 2>&1)",
+      "Bash(~/.bun/bin/bun --version && which node 2>/dev/null || echo \"node not in PATH\")",
+      "Bash(cd /infrastructure/nambar/spyfall/backend && /infrastructure/nambar/nodejs/bin/npm install 2>&1)",
+      "Bash(cd /infrastructure/nambar/spyfall/frontend && /infrastructure/nambar/nodejs/bin/npm install 2>&1)",
+      "Bash(/infrastructure/nambar/nodejs/bin/node -e \"\nimport\\('./src/core/gameLogic.js'\\).then\\(m => {\n  // Quick smoke test of pure functions\n  const room = m.createRoom\\({ hostId: 's1', hostName: 'Alice', spyCount: 1, mode: 'preset' }\\);\n  room.code = 'TEST01';\n  let r = m.addPlayer\\(room, { id: 's2', name: 'Bob' }\\);\n  r = m.addPlayer\\(r, { id: 's3', name: 'Carol' }\\);\n  const round = m.beginRound\\(r\\);\n  const spies = Object.values\\(round.round.assignments\\).filter\\(a => a.role === 'spy'\\);\n  console.log\\('Players:', round.players.map\\(p => p.name\\)\\);\n  console.log\\('Place:', round.round.place\\);\n  console.log\\('Spy count:', spies.length\\);\n  console.log\\('gameLogic.js OK'\\);\n}\\).catch\\(e => console.error\\(e\\)\\);\n\" 2>&1)",
+      "Bash(timeout 5 /infrastructure/nambar/nodejs/bin/node src/server.js 2>&1 || true)",
+      "Bash(cd /infrastructure/nambar/spyfall/frontend && /infrastructure/nambar/nodejs/bin/npx vite build 2>&1)",
+      "Bash(/infrastructure/nambar/nodejs/bin/npx vite build 2>&1)",
+      "WebSearch",
+      "Bash(cd /infrastructure/nambar/spyfall && /infrastructure/nambar/nodejs/bin/npm run build 2>&1)",
+      "Bash(timeout 4 /infrastructure/nambar/nodejs/bin/node backend/src/server.js 2>&1 || true)",
+      "Bash(curl -s http://localhost:3001/health 2>/dev/null || echo \"server not running \\(expected in test\\)\")",
+      "Bash(/infrastructure/nambar/nodejs/bin/node -e \"\nimport { existsSync } from 'fs';\nimport { fileURLToPath } from 'url';\nimport { dirname, join } from 'path';\nconst d = dirname\\(fileURLToPath\\(import.meta.url\\)\\);\nconst dist = join\\(d, 'backend/src/../../frontend/dist'\\);\nconsole.log\\('dist path:', dist\\);\nconsole.log\\('exists:', existsSync\\(dist\\)\\);\n\" --input-type=module 2>&1)"
+    ]
+  }
+}
