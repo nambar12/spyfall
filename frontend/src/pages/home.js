@@ -3,6 +3,13 @@ import { socket, ensureConnected } from '../socket.js';
 import { showToast } from '../toast.js';
 
 export function renderHome(container, state) {
+  // ── Partial update: only refresh the rooms list if the form already exists ──
+  if (container.querySelector('#createForm')) {
+    renderRoomsList(state.rooms ?? []);
+    return;
+  }
+
+  // ── Full render ──────────────────────────────────────────────────────────
   container.innerHTML = `
     <div class="page home-page">
       <header>
@@ -11,57 +18,37 @@ export function renderHome(container, state) {
         <p class="tagline">Who among you is the spy?</p>
       </header>
 
-      <div class="home-grid">
-        <!-- Create room -->
-        <div class="card">
-          <h2>Create Room</h2>
-          <form id="createForm" novalidate>
-            <div class="form-group">
-              <label for="createName">Your name</label>
-              <input id="createName" type="text" placeholder="e.g. Alice" maxlength="20" autocomplete="off" />
-            </div>
-
-            <div class="form-row">
-              <div class="form-group">
-                <label for="spyCount">Spies</label>
-                <input id="spyCount" type="number" min="1" max="4" value="1" />
-              </div>
-              <div class="form-group">
-                <label for="gameMode">Mode</label>
-                <select id="gameMode">
-                  <option value="preset">Preset places</option>
-                  <option value="player">Player places</option>
-                </select>
-              </div>
-            </div>
-
-            <button type="submit" class="btn-primary">Create Room</button>
-          </form>
-        </div>
-
-        <!-- Join room -->
-        <div class="card">
-          <h2>Join Room</h2>
-          <form id="joinForm" novalidate>
-            <div class="form-group">
-              <label for="joinName">Your name</label>
-              <input id="joinName" type="text" placeholder="e.g. Bob" maxlength="20" autocomplete="off" />
-            </div>
-            <div class="form-group">
-              <label for="joinCode">Room code</label>
-              <input
-                id="joinCode"
-                type="text"
-                placeholder="e.g. A3BX9K"
-                maxlength="6"
-                style="text-transform:uppercase;font-family:monospace;font-size:1.1rem;letter-spacing:.1em"
-                autocomplete="off"
-              />
-            </div>
-            <button type="submit" class="btn-primary">Join Room</button>
-          </form>
-        </div>
+      <!-- Step 1: name (shared by join and create) -->
+      <div class="form-group name-step">
+        <label for="playerName">Your name</label>
+        <input id="playerName" type="text" placeholder="e.g. Alice" maxlength="20" autocomplete="off" autofocus />
       </div>
+
+      <!-- Step 2: join an existing room -->
+      <div class="section">
+        <h3>Available Rooms</h3>
+        <div id="roomsList"></div>
+      </div>
+
+      <div class="divider"><span>or create a new room</span></div>
+
+      <!-- Step 3: create -->
+      <form id="createForm" class="card mt-2" novalidate>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="spyCount">Spies</label>
+            <input id="spyCount" type="number" min="1" max="4" value="1" />
+          </div>
+          <div class="form-group">
+            <label for="gameMode">Mode</label>
+            <select id="gameMode">
+              <option value="preset">Preset places</option>
+              <option value="player">Player places</option>
+            </select>
+          </div>
+        </div>
+        <button type="submit" class="btn-primary" data-label="Create Room">Create Room</button>
+      </form>
 
       <div class="divider mt-3"><span>How to play</span></div>
       <div class="card mt-2" style="color:var(--muted);font-size:.9rem;line-height:1.7">
@@ -80,25 +67,16 @@ export function renderHome(container, state) {
     </div>
   `;
 
-  /**
-   * Connect the socket (if needed) then call emit().
-   * Shows a "Connecting…" state on the button while waiting.
-   * If the connection fails, the connect_error handler in socket.js shows a toast.
-   */
+  renderRoomsList(state.rooms ?? []);
+
   function emitWhenReady(emit, btn) {
     if (btn) { btn.disabled = true; btn.textContent = 'Connecting…'; }
 
-    if (socket.connected) {
-      emit();
-      return;
-    }
+    if (socket.connected) { emit(); return; }
 
     ensureConnected();
 
-    function onConnect() {
-      socket.off('connect_error', onError);
-      emit();
-    }
+    function onConnect() { socket.off('connect_error', onError); emit(); }
     function onError() {
       socket.off('connect', onConnect);
       if (btn) { btn.disabled = false; btn.textContent = btn.dataset.label; }
@@ -108,42 +86,54 @@ export function renderHome(container, state) {
     socket.once('connect_error', onError);
   }
 
-  // Stash original button labels so we can restore them on error
-  document.querySelectorAll('button[type=submit]').forEach((b) => {
-    b.dataset.label = b.textContent;
-  });
-
-  // Create room
   document.getElementById('createForm').addEventListener('submit', (e) => {
     e.preventDefault();
-    const name = document.getElementById('createName').value.trim();
+    const name = document.getElementById('playerName').value.trim();
     const spyCount = parseInt(document.getElementById('spyCount').value, 10);
     const mode = document.getElementById('gameMode').value;
-    if (!name) { showToast('Enter your name first', 'error'); return; }
+    if (!name) { showToast('Enter your name first', 'error'); document.getElementById('playerName').focus(); return; }
     emitWhenReady(() => api.createRoom({ name, spyCount, mode }), e.submitter);
   });
+}
 
-  // Join room
-  document.getElementById('joinForm').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const name = document.getElementById('joinName').value.trim();
-    const code = document.getElementById('joinCode').value.toUpperCase().trim();
-    if (!name) { showToast('Enter your name first', 'error'); return; }
-    if (!code)  { showToast('Enter the room code', 'error'); return; }
-    emitWhenReady(() => api.joinRoom({ code, name }), e.submitter);
-  });
+function renderRoomsList(rooms) {
+  const el = document.getElementById('roomsList');
+  if (!el) return;
 
-  // Pre-fill join code from URL or shared link.
-  if (state?.prefillCode) {
-    const codeEl = document.getElementById('joinCode');
-    codeEl.value = state.prefillCode;
-    document.getElementById('joinName').focus();
+  if (!rooms.length) {
+    el.innerHTML = '<p class="waiting-text" style="text-align:left;padding:.5rem 0">No open rooms yet.</p>';
+    return;
   }
 
-  // Force-uppercase room code as user types.
-  document.getElementById('joinCode').addEventListener('input', function () {
-    const pos = this.selectionStart;
-    this.value = this.value.toUpperCase();
-    this.setSelectionRange(pos, pos);
+  el.innerHTML = rooms.map((r) => {
+    const modeLabel = r.mode === 'preset' ? 'Preset' : 'Player';
+    const spyLabel  = `${r.spyCount} spy${r.spyCount > 1 ? 'ies' : ''}`;
+    return `
+      <button class="room-item" data-code="${escHtml(r.code)}">
+        <div>
+          <span class="room-item-code">${escHtml(r.code)}</span>
+          <span class="room-item-meta">${r.connectedCount} / ${r.totalPlayers} players · ${modeLabel} · ${spyLabel}</span>
+        </div>
+        <span class="room-item-join">Join →</span>
+      </button>
+    `;
+  }).join('');
+
+  el.querySelectorAll('.room-item').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const code = btn.dataset.code;
+      const name = document.getElementById('playerName')?.value.trim();
+      if (!name) { showToast('Enter your name first', 'error'); document.getElementById('playerName').focus(); return; }
+      if (socket.connected) {
+        api.joinRoom({ code, name });
+      } else {
+        ensureConnected();
+        socket.once('connect', () => api.joinRoom({ code, name }));
+      }
+    });
   });
+}
+
+function escHtml(str) {
+  return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }

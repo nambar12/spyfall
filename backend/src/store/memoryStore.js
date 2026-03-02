@@ -24,4 +24,8 @@ export const memoryStore = {
   deleteRoom(code) {
     rooms.delete(code);
   },
+
+  listRooms() {
+    return [...rooms.values()];
+  },
 };

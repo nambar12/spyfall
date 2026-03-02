@@ -7,7 +7,7 @@
 const initialState = {
   page: 'home',        // 'home' | 'lobby' | 'submission' | 'game' | 'reveal'
   socketId: null,      // populated once socket connects
-  prefillCode: null,   // room code to pre-fill the join form (from URL or shared link)
+  rooms: [],           // live list of lobby-phase rooms from server
   room: null,          // public room snapshot from server
   myRole: null,        // { role: 'spy'|'innocent', place: string|null }
 };

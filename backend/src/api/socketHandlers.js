@@ -4,18 +4,17 @@
  * All business logic delegates to pure functions in core/gameLogic.js.
  * The store is injected — memoryStore (dev) or redisStore (prod).
  *
- * Disconnect policy (handles mobile apps going to background):
- *   Host disconnects      → 45-second grace period before the room is closed.
- *   Player disconnects in lobby → 30-second grace period before removal.
- *   Player disconnects in-game  → marked offline; stays in assignments; can rejoin.
- * Any reconnection within the grace period cancels the timer.
+ * Disconnect policy:
+ *   Any player disconnects → marked offline immediately.
+ *   If ALL players in a room are offline → 15-minute inactivity timer starts.
+ *   Any reconnection cancels the timer.
+ *   After 15 minutes of everyone offline → room is deleted.
  */
 
 import {
   generateRoomCode,
   createRoom,
   addPlayer,
-  removePlayer,
   setPlayerConnected,
   remapPlayerId,
   beginSubmissionPhase,
@@ -27,33 +26,65 @@ import {
 } from '../core/gameLogic.js';
 
 // ---------------------------------------------------------------------------
-// Module-level grace-period timers (in-process; survive reconnects, not restarts)
+// Module-level inactivity timers (in-process; survive reconnects, not restarts)
 // ---------------------------------------------------------------------------
 
-/** roomCode → timerId  —  host disconnect timers */
-const hostTimers = new Map();
+/** roomCode → timerId  —  fires when every player has been offline for 15 min */
+const inactivityTimers = new Map();
 
-/** `${roomCode}:${playerName}` → timerId  —  lobby-player disconnect timers */
-const playerTimers = new Map();
-
-function cancelHostTimer(code) {
-  if (hostTimers.has(code)) { clearTimeout(hostTimers.get(code)); hostTimers.delete(code); }
+function cancelInactivityTimer(code) {
+  if (inactivityTimers.has(code)) {
+    clearTimeout(inactivityTimers.get(code));
+    inactivityTimers.delete(code);
+  }
 }
 
-function cancelPlayerTimer(code, name) {
-  const key = `${code}:${name}`;
-  if (playerTimers.has(key)) { clearTimeout(playerTimers.get(key)); playerTimers.delete(key); }
+function scheduleInactivityDelete(code, io, store) {
+  if (inactivityTimers.has(code)) return; // already scheduled
+  console.log(`[room ${code}] all players offline — starting 15-min inactivity timer`);
+  const timerId = setTimeout(async () => {
+    inactivityTimers.delete(code);
+    try {
+      const current = await store.getRoom(code);
+      if (!current) return;
+      if (current.players.some((p) => p.connected)) return; // someone came back
+      console.log(`[room ${code}] inactivity timeout — closing room`);
+      io.to(code).emit('roomClosed', { reason: 'Room closed due to inactivity' });
+      await store.deleteRoom(code);
+      broadcastRoomList(io, store);
+    } catch (e) { console.error('[inactivityTimer]', e.message); }
+  }, 15 * 60 * 1000);
+  inactivityTimers.set(code, timerId);
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
+function toRoomList(rooms) {
+  return rooms
+    .filter((r) => r.phase === 'lobby')
+    .map((r) => ({
+      code:           r.code,
+      connectedCount: r.players.filter((p) => p.connected).length,
+      totalPlayers:   r.players.length,
+      mode:           r.config.mode,
+      spyCount:       r.config.spyCount,
+      phase:          r.phase,
+    }));
+}
+
+async function broadcastRoomList(io, store) {
+  try {
+    const rooms = await store.listRooms();
+    io.emit('roomList', toRoomList(rooms));
+  } catch (e) { console.error('[broadcastRoomList]', e.message); }
+}
+
 function toPublicRoom(room) {
   const base = {
     code:    room.code,
-    hostId:  room.hostId,
-    players: room.players.map(({ id, name, isHost, connected }) => ({ id, name, isHost, connected })),
+    players: room.players.map(({ id, name, connected }) => ({ id, name, connected })),
     config:  room.config,
     phase:   room.phase,
   };
@@ -88,15 +119,12 @@ function broadcastRoundStart(io, room) {
 
 export function registerHandlers(io, socket, store) {
 
+  // Send current room list to the newly connected socket.
+  Promise.resolve(store.listRooms()).then((rooms) => socket.emit('roomList', toRoomList(rooms))).catch(() => {});
+
   async function getRoom(code) {
     const room = await store.getRoom(code ?? socket.data.roomCode);
-    if (!room) throw new Error('Room not found — check the code');
-    return room;
-  }
-
-  async function getHostRoom() {
-    const room = await getRoom();
-    if (room.hostId !== socket.id) throw new Error('Only the host can do that');
+    if (!room) throw new Error('Room not found');
     return room;
   }
 
@@ -117,14 +145,14 @@ export function registerHandlers(io, socket, store) {
     let code;
     do { code = generateRoomCode(); } while (await store.getRoom(code));
 
-    const room = { ...createRoom({ hostId: socket.id, hostName: name, spyCount, mode }), code };
+    const room = { ...createRoom({ creatorId: socket.id, creatorName: name, spyCount, mode }), code };
     await store.setRoom(code, room);
 
     socket.join(code);
     socket.data.roomCode = code;
 
-    socket.emit('roomCreated', { code });
     broadcastRoomState(io, room);
+    broadcastRoomList(io, store);
   }));
 
   // -------------------------------------------------------------------------
@@ -135,7 +163,7 @@ export function registerHandlers(io, socket, store) {
 
     const upperCode   = code?.toUpperCase().trim();
     let   room        = await store.getRoom(upperCode);
-    if (!room) throw new Error('Room not found — check the code');
+    if (!room) throw new Error('Room not found');
 
     const trimmedName = name.trim();
     const existing    = room.players.find(
@@ -146,9 +174,7 @@ export function registerHandlers(io, socket, store) {
       // ── Reconnection path ──────────────────────────────────────────────
       if (existing.connected) throw new Error('Someone with that name is already connected');
 
-      // Cancel any pending disconnect timers for this player.
-      cancelHostTimer(upperCode);
-      cancelPlayerTimer(upperCode, trimmedName);
+      cancelInactivityTimer(upperCode);
 
       room = remapPlayerId(room, existing.id, socket.id);
       await store.setRoom(upperCode, room);
@@ -156,8 +182,8 @@ export function registerHandlers(io, socket, store) {
       socket.join(upperCode);
       socket.data.roomCode = upperCode;
 
-      socket.emit('roomJoined', { code: upperCode });
       broadcastRoomState(io, room);
+      broadcastRoomList(io, store);
 
       if (room.phase === 'playing' && room.round?.assignments?.[socket.id]) {
         socket.emit('roleAssigned', room.round.assignments[socket.id]);
@@ -175,15 +201,15 @@ export function registerHandlers(io, socket, store) {
     socket.join(upperCode);
     socket.data.roomCode = upperCode;
 
-    socket.emit('roomJoined', { code: upperCode });
     broadcastRoomState(io, room);
+    broadcastRoomList(io, store);
   }));
 
   // -------------------------------------------------------------------------
-  // Start game
+  // Start game  (any player)
   // -------------------------------------------------------------------------
   socket.on('startGame', safe(async () => {
-    let room = await getHostRoom();
+    let room = await getRoom();
     if (room.phase !== 'lobby') throw new Error('Game is already running');
     if (room.players.filter(p => p.connected).length < 3)
       throw new Error('Need at least 3 connected players to start');
@@ -197,6 +223,7 @@ export function registerHandlers(io, socket, store) {
       await store.setRoom(room.code, room);
       broadcastRoundStart(io, room);
     }
+    broadcastRoomList(io, store);
   }));
 
   // -------------------------------------------------------------------------
@@ -215,44 +242,47 @@ export function registerHandlers(io, socket, store) {
   }));
 
   // -------------------------------------------------------------------------
-  // Start round
+  // Start round  (any player)
   // -------------------------------------------------------------------------
   socket.on('startRound', safe(async () => {
-    let room = await getHostRoom();
+    let room = await getRoom();
     if (room.phase !== 'submission') throw new Error('Not in the submission phase');
     if (!allPlayersSubmitted(room)) throw new Error('Waiting for all players to submit');
 
     room = beginRound(room);
     await store.setRoom(room.code, room);
     broadcastRoundStart(io, room);
+    broadcastRoomList(io, store);
   }));
 
   // -------------------------------------------------------------------------
-  // Reveal
+  // Reveal  (any player)
   // -------------------------------------------------------------------------
   socket.on('revealRound', safe(async () => {
-    let room = await getHostRoom();
+    let room = await getRoom();
     if (room.phase !== 'playing') throw new Error('No round is in progress');
 
     room = revealRound(room);
     await store.setRoom(room.code, room);
     broadcastRoomState(io, room);
+    broadcastRoomList(io, store);
   }));
 
   // -------------------------------------------------------------------------
-  // Next round
+  // Next round  (any player)
   // -------------------------------------------------------------------------
   socket.on('nextRound', safe(async () => {
-    let room = await getHostRoom();
+    let room = await getRoom();
     if (room.phase !== 'reveal') throw new Error('Round has not been revealed yet');
 
     room = resetToLobby(room);
     await store.setRoom(room.code, room);
     broadcastRoomState(io, room);
+    broadcastRoomList(io, store);
   }));
 
   // -------------------------------------------------------------------------
-  // Disconnect  — grace-period policy
+  // Disconnect  — 15-min inactivity timer when everyone is offline
   // -------------------------------------------------------------------------
   socket.on('disconnect', async () => {
     const code = socket.data.roomCode;
@@ -265,49 +295,14 @@ export function registerHandlers(io, socket, store) {
       const player = room.players.find((p) => p.id === socket.id);
       if (!player) return;
 
-      // Mark the player as offline immediately so others see it.
       const updated = setPlayerConnected(room, socket.id, false);
       await store.setRoom(code, updated);
       broadcastRoomState(io, updated);
+      broadcastRoomList(io, store);
 
-      if (room.hostId === socket.id) {
-        // ── Host disconnected — 45-second grace period ───────────────────
-        console.log(`[room ${code}] host disconnected, starting 45s grace period`);
-        const timerId = setTimeout(async () => {
-          hostTimers.delete(code);
-          try {
-            const current = await store.getRoom(code);
-            if (!current) return;
-            const hostBack = current.players.find((p) => p.isHost && p.connected);
-            if (!hostBack) {
-              console.log(`[room ${code}] host did not return, closing room`);
-              io.to(code).emit('roomClosed', { reason: 'The host disconnected' });
-              await store.deleteRoom(code);
-            }
-          } catch (e) { console.error('[hostTimer]', e.message); }
-        }, 45_000);
-        hostTimers.set(code, timerId);
-
-      } else if (room.phase === 'lobby') {
-        // ── Lobby player — 30-second grace period, then remove ───────────
-        const timerKey = `${code}:${player.name}`;
-        const timerId = setTimeout(async () => {
-          playerTimers.delete(timerKey);
-          try {
-            const current = await store.getRoom(code);
-            if (!current) return;
-            const p = current.players.find((pl) => pl.name === player.name);
-            if (p && !p.connected) {
-              const pruned = removePlayer(current, p.id);
-              await store.setRoom(code, pruned);
-              broadcastRoomState(io, pruned);
-            }
-          } catch (e) { console.error('[playerTimer]', e.message); }
-        }, 30_000);
-        playerTimers.set(timerKey, timerId);
+      if (!updated.players.some((p) => p.connected)) {
+        scheduleInactivityDelete(code, io, store);
       }
-      // In-game non-host: stays disconnected indefinitely; can rejoin.
-
     } catch (err) {
       console.error('[disconnect]', err.message);
     }

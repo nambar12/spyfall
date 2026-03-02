@@ -4,7 +4,6 @@ export function renderReveal(container, state) {
   const { room, socketId } = state;
   if (!room || !room.reveal) return;
 
-  const isHost = room.hostId === socketId;
   const { place, assignments, submitterId } = room.reveal;
 
   container.innerHTML = `
@@ -42,17 +41,14 @@ export function renderReveal(container, state) {
         </ul>
       </div>
 
-      <!-- Host actions -->
-      ${isHost
-        ? `<div class="section btn-group">
-            <button id="nextRoundBtn" class="btn-primary" style="flex:1">Play Again</button>
-           </div>`
-        : `<p class="waiting-text">Waiting for the host to start the next round…</p>`
-      }
+      <!-- Actions -->
+      <div class="section btn-group">
+        <button id="nextRoundBtn" class="btn-primary" style="flex:1">Play Again</button>
+      </div>
     </div>
   `;
 
-  document.getElementById('nextRoundBtn')?.addEventListener('click', () => api.nextRound());
+  document.getElementById('nextRoundBtn').addEventListener('click', () => api.nextRound());
 }
 
 function playerName(room, id) {

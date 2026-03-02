@@ -136,17 +136,42 @@ button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
    ────────────────────────────────────────────────────────────── */
 .home-page header {
   text-align: center;
-  margin-bottom: 2.5rem;
+  margin-bottom: 2rem;
+}
+
+.name-step {
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem 1.1rem;
+  margin-bottom: 1.5rem;
+}
+.name-step label {
+  font-size: .9rem;
+  font-weight: 700;
+  color: var(--accent-lit);
+  letter-spacing: .02em;
 }
 
 .hero-icon { font-size: 4rem; display: block; margin-bottom: .5rem; }
 
-.home-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.25rem;
+.room-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: .75rem 1rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: .5rem;
+  text-align: left;
+  color: var(--text);
 }
-@media (max-width: 560px) { .home-grid { grid-template-columns: 1fr; } }
+.room-item:hover { border-color: var(--accent); background: var(--surface); }
+.room-item-code { display: block; font-family: monospace; font-size: 1rem; font-weight: 700; color: var(--accent-lit); }
+.room-item-meta { display: block; font-size: .82rem; color: var(--muted); margin-top: .1rem; font-weight: 400; }
+.room-item-join { font-size: .85rem; color: var(--accent-lit); flex-shrink: 0; margin-left: 1rem; }
 
 .divider {
   display: flex;
@@ -256,17 +281,9 @@ button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
   text-align: center;
   padding: 2.5rem 1.5rem;
   border-radius: var(--radius);
-  border: 2px solid var(--border);
+  border: 1px solid var(--border);
+  background: var(--surface);
   margin-bottom: 1.25rem;
-}
-
-.role-card.spy {
-  border-color: var(--danger);
-  background: rgba(239, 68, 68, .06);
-}
-.role-card.innocent {
-  border-color: var(--success);
-  background: rgba(34, 197, 94, .06);
 }
 
 .role-label {
@@ -279,11 +296,23 @@ button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 }
 
 .role-name {
-  font-size: 2rem;
-  font-weight: 800;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text);
 }
-.role-card.spy  .role-name { color: var(--danger); }
-.role-card.innocent .role-name { color: var(--success); }
+
+.role-pill-inline {
+  display: inline-block;
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  border-radius: 999px;
+  padding: .2rem .7rem;
+  margin-top: .5rem;
+}
+.role-pill-inline.spy      { background: rgba(239,68,68,.15); color: var(--danger); }
+.role-pill-inline.innocent { background: rgba(34,197,94,.12); color: var(--success); }
 
 .place-display {
   font-size: 1.6rem;

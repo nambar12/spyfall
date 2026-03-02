@@ -6,7 +6,7 @@
 import { io } from 'socket.io-client';
 import { getState, setState, resetState } from './state.js';
 import { showToast } from './toast.js';
-import { session, pushRoomUrl, clearRoomUrl } from './session.js';
+import { session } from './session.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL; // undefined = same origin
 
@@ -26,7 +26,7 @@ socket.on('connect', () => {
   // When socket.io reconnects (e.g. after backgrounding the app), the server
   // gets a brand-new socket with no room association. We must re-emit joinRoom
   // so the server remaps our new socket ID onto our existing player slot and
-  // cancels the disconnect grace-period timer.
+  // cancels the inactivity timer.
   //
   // We only do this when we already have a room in state (so we don't
   // interfere with the normal first-connect flow from the home page).
@@ -41,14 +41,10 @@ socket.on('disconnect', () => {
   setState({ socketId: null });
 });
 
-// ── Room creation / joining ──────────────────────────────────────────────────
+// ── Room list (home page) ────────────────────────────────────────────────────
 
-socket.on('roomCreated', ({ code }) => {
-  pushRoomUrl(code);
-});
-
-socket.on('roomJoined', ({ code }) => {
-  pushRoomUrl(code);
+socket.on('roomList', (rooms) => {
+  setState({ rooms });
 });
 
 // ── Room state (primary sync mechanism) ─────────────────────────────────────
@@ -77,12 +73,11 @@ socket.on('roleAssigned', (assignment) => {
   setState({ myRole: assignment });
 });
 
-// ── Room closed by host ──────────────────────────────────────────────────────
+// ── Room closed ──────────────────────────────────────────────────────────────
 
 socket.on('roomClosed', ({ reason }) => {
   showToast(reason, 'error', 5000);
   session.clear();
-  clearRoomUrl();
   resetState();
 });
 
@@ -102,10 +97,9 @@ socket.on('connect_error', (err) => {
 
 socket.on('error', ({ message }) => {
   showToast(message, 'error');
-  if (message === 'Room not found — check the code') {
+  if (message === 'Room not found') {
     session.clear();
-    clearRoomUrl();
-    setState({ page: 'home', prefillCode: null });
+    setState({ page: 'home' });
   }
 });
 

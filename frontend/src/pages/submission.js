@@ -4,13 +4,12 @@ export function renderSubmission(container, state) {
   const { room, socketId } = state;
   if (!room) return;
 
-  const submittedIds  = new Set(room.submittedIds ?? []);
+  const submittedIds   = new Set(room.submittedIds ?? []);
   const iHaveSubmitted = submittedIds.has(socketId);
-  const isHost         = room.hostId === socketId;
 
   // ── Partial update path ──────────────────────────────────────────────────
   // If the input form is already in the DOM and the player hasn't submitted,
-  // only update the status list and the host button.
+  // only update the status list and the start button.
   // This preserves whatever they've typed and keeps the mobile keyboard open.
   if (container.querySelector('#submitForm') && !iHaveSubmitted) {
     const allSubmitted = room.players.every((p) => submittedIds.has(p.id));
@@ -69,13 +68,11 @@ export function renderSubmission(container, state) {
         </ul>
       </div>
 
-      ${isHost ? `
-        <div class="section">
-          <button id="startRoundBtn" class="btn-primary" ${allSubmitted ? '' : 'disabled'}>
-            ${allSubmitted ? 'Start Round' : 'Waiting for all submissions…'}
-          </button>
-        </div>
-      ` : ''}
+      <div class="section">
+        <button id="startRoundBtn" class="btn-primary" ${allSubmitted ? '' : 'disabled'}>
+          ${allSubmitted ? 'Start Round' : 'Waiting for all submissions…'}
+        </button>
+      </div>
     </div>
   `;
 

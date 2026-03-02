@@ -39,5 +39,17 @@ export function createRedisStore(connectionUrl) {
     async deleteRoom(code) {
       await client.del(`${PREFIX}${code}`);
     },
+    async listRooms() {
+      const keys = [];
+      let cursor = '0';
+      do {
+        const [nextCursor, batch] = await client.scan(cursor, 'MATCH', `${PREFIX}*`, 'COUNT', 100);
+        cursor = nextCursor;
+        keys.push(...batch);
+      } while (cursor !== '0');
+      if (keys.length === 0) return [];
+      const raws = await client.mget(...keys);
+      return raws.flatMap((r) => (r ? [JSON.parse(r)] : []));
+    },
   };
 }

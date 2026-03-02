@@ -15,11 +15,10 @@ export function generateRoomCode() {
 }
 
 /** Returns a brand-new room object (code assigned by caller to allow retry on collision). */
-export function createRoom({ hostId, hostName, spyCount, mode }) {
+export function createRoom({ creatorId, creatorName, spyCount, mode }) {
   return {
     code: null,
-    hostId,
-    players: [{ id: hostId, name: hostName.trim(), isHost: true, connected: true }],
+    players: [{ id: creatorId, name: creatorName.trim(), connected: true }],
     config: {
       spyCount: Math.max(1, Math.min(Number(spyCount) || 1, 4)),
       mode: mode === 'player' ? 'player' : 'preset',
@@ -32,7 +31,7 @@ export function createRoom({ hostId, hostName, spyCount, mode }) {
 export function addPlayer(room, { id, name }) {
   return {
     ...room,
-    players: [...room.players, { id, name: name.trim(), isHost: false, connected: true }],
+    players: [...room.players, { id, name: name.trim(), connected: true }],
   };
 }
 
@@ -135,7 +134,6 @@ export function remapPlayerId(room, oldId, newId) {
 
   return {
     ...room,
-    hostId: room.hostId === oldId ? newId : room.hostId,
     players: room.players.map((p) =>
       p.id === oldId ? { ...p, id: newId, connected: true } : p,
     ),
