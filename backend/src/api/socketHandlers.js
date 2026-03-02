@@ -172,7 +172,13 @@ export function registerHandlers(io, socket, store) {
 
     if (existing) {
       // ── Reconnection path ──────────────────────────────────────────────
-      if (existing.connected) throw new Error('Someone with that name is already connected');
+      // Guard against the race where the client reconnects before the server
+      // has processed the disconnect of the old socket (e.g. long-polling
+      // pingTimeout). If the old socket ID is genuinely still live in
+      // Socket.io, reject. Otherwise let the new connection take over.
+      if (existing.connected && io.sockets.sockets.has(existing.id)) {
+        throw new Error('Someone with that name is already connected');
+      }
 
       cancelInactivityTimer(upperCode);
 

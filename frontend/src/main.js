@@ -38,11 +38,13 @@ subscribe(render);
 
 // ── Startup routing ───────────────────────────────────────────────────────────
 
+// Always connect immediately so the home page receives live roomList broadcasts.
+ensureConnected();
+
 const saved = session.load();
 
 if (saved?.roomCode && saved?.playerName) {
   // Page was refreshed while in a room — silently rejoin.
-  ensureConnected();
   socket.once('connect', () => api.joinRoom({ code: saved.roomCode, name: saved.playerName }));
 }
 
