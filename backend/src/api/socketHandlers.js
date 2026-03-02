@@ -24,6 +24,7 @@ import {
   beginRound,
   revealRound,
   resetToLobby,
+  toggleSuspicion,
 } from '../core/gameLogic.js';
 
 // ---------------------------------------------------------------------------
@@ -91,6 +92,9 @@ function toPublicRoom(room) {
   };
   if (room.phase === 'submission') {
     base.submittedIds = Object.keys(room.round?.submissions ?? {});
+  }
+  if (room.phase === 'playing' || room.phase === 'reveal') {
+    base.suspicions = room.round?.suspicions ?? {};
   }
   if (room.phase === 'reveal') {
     base.reveal = {
@@ -286,6 +290,21 @@ export function registerHandlers(io, socket, store) {
     await store.setRoom(room.code, room);
     broadcastRoomState(io, room);
     broadcastRoomList(io, store);
+  }));
+
+  // -------------------------------------------------------------------------
+  // Suspect / un-suspect a player
+  // -------------------------------------------------------------------------
+  socket.on('toggleSuspicion', safe(async ({ targetId } = {}) => {
+    if (!targetId) return;
+    let room = await getRoom();
+    if (room.phase !== 'playing') return;
+    if (targetId === socket.id) return;
+    if (!room.players.find((p) => p.id === targetId)) return;
+
+    room = toggleSuspicion(room, socket.id, targetId);
+    await store.setRoom(room.code, room);
+    broadcastRoomState(io, room);
   }));
 
   // -------------------------------------------------------------------------

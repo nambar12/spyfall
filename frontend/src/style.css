@@ -249,6 +249,32 @@ button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
   border-radius: 8px;
   font-size: .95rem;
 }
+.player-list li.suspectable { cursor: pointer; user-select: none; }
+.player-list li.suspectable:hover { background: var(--surface); }
+
+.suspicion-bar {
+  display: flex;
+  gap: 3px;
+  margin-left: auto;
+  flex-shrink: 0;
+  align-items: center;
+}
+.suspicion-seg {
+  width: 9px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.suspicion-seg.filled {
+  background: rgba(239, 68, 68, .45);
+  border-color: rgba(239, 68, 68, .45);
+}
+.suspicion-seg.mine {
+  background: var(--danger);
+  border-color: var(--danger);
+}
 .player-list li .crown { color: #f59e0b; }
 .player-list li .dot {
   width: 8px; height: 8px;

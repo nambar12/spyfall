@@ -13,5 +13,6 @@ export const api = {
   startRound: ()        => socket.emit('startRound'),
   revealRound:()        => socket.emit('revealRound'),
   nextRound:  ()        => socket.emit('nextRound'),
-  leaveRoom:  ()        => socket.emit('leaveRoom'),
+  leaveRoom:       ()         => socket.emit('leaveRoom'),
+  toggleSuspicion: (targetId) => socket.emit('toggleSuspicion', { targetId }),
 };

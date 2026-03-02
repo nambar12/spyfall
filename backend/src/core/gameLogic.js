@@ -107,7 +107,23 @@ export function beginRound(room) {
   return {
     ...room,
     phase: 'playing',
-    round: { ...round, place, submitterId, assignments },
+    round: { ...round, place, submitterId, assignments, suspicions: {} },
+  };
+}
+
+/**
+ * Toggle one player's suspicion of another.
+ * suspicions: { suspectorId: [targetId, ...] }
+ */
+export function toggleSuspicion(room, suspectorId, targetId) {
+  const suspicions = room.round?.suspicions ?? {};
+  const mine = suspicions[suspectorId] ?? [];
+  const updated = mine.includes(targetId)
+    ? mine.filter((id) => id !== targetId)
+    : [...mine, targetId];
+  return {
+    ...room,
+    round: { ...room.round, suspicions: { ...suspicions, [suspectorId]: updated } },
   };
 }
 
@@ -132,6 +148,15 @@ export function remapPlayerId(room, oldId, newId) {
     return { ...rest, [newId]: val };
   };
 
+  const remapSuspicions = (suspicions) => {
+    if (!suspicions) return suspicions;
+    const result = {};
+    for (const [sid, targets] of Object.entries(suspicions)) {
+      result[sid === oldId ? newId : sid] = targets.map((t) => (t === oldId ? newId : t));
+    }
+    return result;
+  };
+
   return {
     ...room,
     players: room.players.map((p) =>
@@ -143,6 +168,7 @@ export function remapPlayerId(room, oldId, newId) {
           assignments: remapObj(room.round.assignments),
           submissions:  remapObj(room.round.submissions),
           submitterId: room.round.submitterId === oldId ? newId : room.round.submitterId,
+          suspicions: remapSuspicions(room.round.suspicions),
         }
       : null,
   };
