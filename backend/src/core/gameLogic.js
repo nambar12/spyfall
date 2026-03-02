@@ -107,8 +107,17 @@ export function beginRound(room) {
   return {
     ...room,
     phase: 'playing',
-    round: { ...round, place, submitterId, assignments, suspicions: {} },
+    round: { ...round, place, submitterId, assignments, suspicions: {}, revealVotes: [] },
   };
+}
+
+/** Toggle a player's "ready to reveal" vote. Returns updated room. */
+export function toggleRevealVote(room, playerId) {
+  const votes   = room.round?.revealVotes ?? [];
+  const updated = votes.includes(playerId)
+    ? votes.filter((id) => id !== playerId)
+    : [...votes, playerId];
+  return { ...room, round: { ...room.round, revealVotes: updated } };
 }
 
 // ---------------------------------------------------------------------------
@@ -226,10 +235,11 @@ export function remapPlayerId(room, oldId, newId) {
     round: room.round
       ? {
           ...room.round,
-          assignments: remapObj(room.round.assignments),
+          assignments:  remapObj(room.round.assignments),
           submissions:  remapObj(room.round.submissions),
-          submitterId: room.round.submitterId === oldId ? newId : room.round.submitterId,
-          suspicions: remapSuspicions(room.round.suspicions),
+          submitterId:  room.round.submitterId === oldId ? newId : room.round.submitterId,
+          suspicions:   remapSuspicions(room.round.suspicions),
+          revealVotes:  (room.round.revealVotes ?? []).map((id) => (id === oldId ? newId : id)),
         }
       : null,
   };

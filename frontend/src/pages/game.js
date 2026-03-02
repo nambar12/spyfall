@@ -7,8 +7,11 @@ export function renderGame(container, state) {
   const isSpy     = myRole?.role === 'spy';
   const roleKnown = !!myRole;
 
-  const suspicions    = room.suspicions ?? {};
+  const suspicions    = room.suspicions  ?? {};
+  const revealVotes   = room.revealVotes ?? [];
   const maxSuspectors = room.players.length - 1;
+  const connectedPlayers = room.players.filter((p) => p.connected);
+  const iVotedReveal  = revealVotes.includes(socketId);
 
   const vote        = room.vote ?? null;
   const voteActive  = !!vote && !vote.resolved;
@@ -56,15 +59,17 @@ export function renderGame(container, state) {
             const count      = suspicionCount(p.id);
             const suspected  = !isMe && iSuspect(p.id);
             const canAccuse  = !isMe && !voteActive && !voteResolved && p.connected;
+            const readyToEnd = revealVotes.includes(p.id);
             const title      = !isMe ? (suspected ? `Clear suspicion of ${escHtml(p.name)}` : `Suspect ${escHtml(p.name)}`) : '';
             return `
               <li ${!isMe ? `class="suspectable${isAccused ? ' being-accused' : ''}" data-id="${escHtml(p.id)}" title="${title}"` : ''}>
                 <span class="dot ${p.connected ? '' : 'offline'}"></span>
                 <span>${escHtml(p.name)}</span>
-                ${isMe       ? '<span class="you-badge">you</span>' : ''}
-                ${isAccused  ? '<span class="accused-badge">accused</span>' : ''}
+                ${isMe         ? '<span class="you-badge">you</span>' : ''}
+                ${isAccused    ? '<span class="accused-badge">accused</span>' : ''}
+                ${readyToEnd   ? '<span class="ready-badge" title="Ready to end round">✓</span>' : ''}
                 ${suspicionBarHTML(count, suspected, maxSuspectors)}
-                ${canAccuse  ? `<button class="btn-accuse" data-accuse="${escHtml(p.id)}" title="Call a vote against ${escHtml(p.name)}">⚖️</button>` : ''}
+                ${canAccuse    ? `<button class="btn-accuse" data-accuse="${escHtml(p.id)}" title="Call a vote against ${escHtml(p.name)}">⚖️</button>` : ''}
               </li>
             `;
           }).join('')}
@@ -73,7 +78,9 @@ export function renderGame(container, state) {
 
       <!-- Actions -->
       <div class="section">
-        <button id="revealBtn" class="btn-primary">Reveal & End Round</button>
+        <button id="revealBtn" class="btn-primary${iVotedReveal ? ' btn-armed' : ''}">
+          ${iVotedReveal ? '✓ ' : ''}End Round · ${revealVotes.filter((id) => connectedPlayers.some((p) => p.id === id)).length} / ${connectedPlayers.length}
+        </button>
         <button id="leaveBtn" class="btn-leave">Exit Room</button>
       </div>
     </div>
@@ -99,33 +106,7 @@ export function renderGame(container, state) {
   document.getElementById('voteYes')?.addEventListener('click', () => api.castVote('yes'));
   document.getElementById('voteNo')?.addEventListener('click', () => api.castVote('no'));
 
-  // Two-step confirm: first tap arms the button, second tap fires.
-  // Auto-reverts after 5 s if not confirmed.
-  let revealArmed = false;
-  let revealTimer = null;
-
-  function armReveal() {
-    revealArmed = true;
-    const btn = document.getElementById('revealBtn');
-    if (!btn) return;
-    btn.textContent = 'Tap again to confirm';
-    btn.classList.add('btn-armed');
-    revealTimer = setTimeout(disarmReveal, 5000);
-  }
-
-  function disarmReveal() {
-    revealArmed = false;
-    clearTimeout(revealTimer);
-    const btn = document.getElementById('revealBtn');
-    if (!btn) return;
-    btn.textContent = 'Reveal & End Round';
-    btn.classList.remove('btn-armed');
-  }
-
-  document.getElementById('revealBtn').addEventListener('click', () => {
-    if (revealArmed) { disarmReveal(); api.revealRound(); }
-    else armReveal();
-  });
+  document.getElementById('revealBtn').addEventListener('click', () => api.toggleRevealVote());
 
   document.getElementById('leaveBtn').addEventListener('click', () => api.leaveRoom());
 }

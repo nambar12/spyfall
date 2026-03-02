@@ -24,6 +24,7 @@ import {
   beginRound,
   revealRound,
   resetToLobby,
+  toggleRevealVote,
   toggleSuspicion,
   initiateVote,
   castVote,
@@ -97,7 +98,8 @@ function toPublicRoom(room) {
     base.submittedIds = Object.keys(room.round?.submissions ?? {});
   }
   if (room.phase === 'playing' || room.phase === 'reveal') {
-    base.suspicions = room.round?.suspicions ?? {};
+    base.suspicions   = room.round?.suspicions   ?? {};
+    base.revealVotes  = room.round?.revealVotes  ?? [];
   }
   if (room.vote) {
     base.vote = {
@@ -319,16 +321,25 @@ export function registerHandlers(io, socket, store) {
   }));
 
   // -------------------------------------------------------------------------
-  // Reveal  (any player)
+  // Reveal vote — toggle readiness; auto-reveals when all connected agree
   // -------------------------------------------------------------------------
-  socket.on('revealRound', safe(async () => {
+  socket.on('toggleRevealVote', safe(async () => {
     let room = await getRoom();
-    if (room.phase !== 'playing') throw new Error('No round is in progress');
+    if (room.phase !== 'playing') return;
 
-    room = revealRound(room);
+    room = toggleRevealVote(room, socket.id);
     await store.setRoom(room.code, room);
     broadcastRoomState(io, room);
-    broadcastRoomList(io, store);
+
+    // Auto-reveal when every connected player has voted.
+    const connected   = room.players.filter((p) => p.connected);
+    const revealVotes = room.round?.revealVotes ?? [];
+    if (connected.length > 0 && connected.every((p) => revealVotes.includes(p.id))) {
+      const revealed = revealRound(room);
+      await store.setRoom(room.code, revealed);
+      broadcastRoomState(io, revealed);
+      broadcastRoomList(io, store);
+    }
   }));
 
   // -------------------------------------------------------------------------
@@ -456,6 +467,18 @@ export function registerHandlers(io, socket, store) {
       // A disconnecting voter might change vote majority — re-check.
       if (updated.vote && !updated.vote.resolved) {
         await handleVoteCheck(code, updated, io, store);
+      }
+
+      // If the disconnecting player was the last holdout for reveal, auto-reveal.
+      if (updated.phase === 'playing') {
+        const connected   = updated.players.filter((p) => p.connected);
+        const revealVotes = updated.round?.revealVotes ?? [];
+        if (connected.length > 0 && connected.every((p) => revealVotes.includes(p.id))) {
+          const revealed = revealRound(updated);
+          await store.setRoom(code, revealed);
+          broadcastRoomState(io, revealed);
+          broadcastRoomList(io, store);
+        }
       }
     } catch (err) {
       console.error('[disconnect]', err.message);
