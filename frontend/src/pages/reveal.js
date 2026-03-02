@@ -44,11 +44,13 @@ export function renderReveal(container, state) {
       <!-- Actions -->
       <div class="section btn-group">
         <button id="nextRoundBtn" class="btn-primary" style="flex:1">Play Again</button>
+        <button id="leaveBtn" class="btn-leave">Exit Room</button>
       </div>
     </div>
   `;
 
   document.getElementById('nextRoundBtn').addEventListener('click', () => api.nextRound());
+  document.getElementById('leaveBtn').addEventListener('click', () => api.leaveRoom());
 }
 
 function playerName(room, id) {

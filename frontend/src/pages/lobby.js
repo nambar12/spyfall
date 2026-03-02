@@ -1,5 +1,4 @@
 import { api } from '../api.js';
-import { showToast } from '../toast.js';
 
 export function renderLobby(container, state) {
   const { room, socketId } = state;
@@ -45,15 +44,22 @@ export function renderLobby(container, state) {
         >
           ${canStart ? 'Start Game' : 'Need at least 3 connected players'}
         </button>
+        <button id="leaveBtn" class="btn-leave">Exit Room</button>
       </div>
     </div>
   `;
 
   document.getElementById('copyCode').addEventListener('click', () => {
-    navigator.clipboard.writeText(room.code).then(() => showToast('Code copied!', 'success', 2000));
+    navigator.clipboard.writeText(room.code).then(() => {
+      const el = document.getElementById('copyCode');
+      const orig = el.title;
+      el.title = 'Copied!';
+      setTimeout(() => { el.title = orig; }, 1500);
+    });
   });
 
   document.getElementById('startBtn')?.addEventListener('click', () => api.startGame());
+  document.getElementById('leaveBtn').addEventListener('click', () => api.leaveRoom());
 }
 
 function escHtml(str) {

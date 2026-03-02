@@ -46,11 +46,13 @@ export function renderGame(container, state) {
       <!-- Actions -->
       <div class="section">
         <button id="revealBtn" class="btn-primary">Reveal & End Round</button>
+        <button id="leaveBtn" class="btn-leave">Exit Room</button>
       </div>
     </div>
   `;
 
   document.getElementById('revealBtn').addEventListener('click', () => api.revealRound());
+  document.getElementById('leaveBtn').addEventListener('click', () => api.leaveRoom());
 }
 
 function escHtml(str) {

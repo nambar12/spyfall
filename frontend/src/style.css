@@ -131,6 +131,18 @@ button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 
 .btn-group { display: flex; gap: .6rem; flex-wrap: wrap; }
 
+.btn-leave {
+  width: 100%;
+  margin-top: .5rem;
+  background: transparent;
+  color: var(--muted);
+  font-size: .85rem;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  padding: .5rem;
+}
+.btn-leave:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); background: transparent; }
+
 /* ──────────────────────────────────────────────────────────────
    Home page
    ────────────────────────────────────────────────────────────── */

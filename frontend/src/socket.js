@@ -73,6 +73,13 @@ socket.on('roleAssigned', (assignment) => {
   setState({ myRole: assignment });
 });
 
+// ── Voluntary leave ──────────────────────────────────────────────────────────
+
+socket.on('leftRoom', () => {
+  session.clear();
+  resetState();
+});
+
 // ── Room closed ──────────────────────────────────────────────────────────────
 
 socket.on('roomClosed', ({ reason }) => {

@@ -15,6 +15,7 @@ import {
   generateRoomCode,
   createRoom,
   addPlayer,
+  removePlayer,
   setPlayerConnected,
   remapPlayerId,
   beginSubmissionPhase,
@@ -284,6 +285,34 @@ export function registerHandlers(io, socket, store) {
     room = resetToLobby(room);
     await store.setRoom(room.code, room);
     broadcastRoomState(io, room);
+    broadcastRoomList(io, store);
+  }));
+
+  // -------------------------------------------------------------------------
+  // Leave room  (explicit, voluntary exit)
+  // -------------------------------------------------------------------------
+  socket.on('leaveRoom', safe(async () => {
+    const code = socket.data.roomCode;
+    if (!code) return;
+
+    const room = await store.getRoom(code);
+    if (!room) return;
+
+    socket.leave(code);
+    socket.data.roomCode = null;
+    socket.emit('leftRoom');
+
+    const remaining = removePlayer(room, socket.id);
+
+    if (remaining.players.length === 0) {
+      await store.deleteRoom(code);
+    } else {
+      await store.setRoom(code, remaining);
+      broadcastRoomState(io, remaining);
+      if (!remaining.players.some((p) => p.connected)) {
+        scheduleInactivityDelete(code, io, store);
+      }
+    }
     broadcastRoomList(io, store);
   }));
 

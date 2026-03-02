@@ -72,6 +72,7 @@ export function renderSubmission(container, state) {
         <button id="startRoundBtn" class="btn-primary" ${allSubmitted ? '' : 'disabled'}>
           ${allSubmitted ? 'Start Round' : 'Waiting for all submissions…'}
         </button>
+        <button id="leaveBtn" class="btn-leave">Exit Room</button>
       </div>
     </div>
   `;
@@ -84,6 +85,7 @@ export function renderSubmission(container, state) {
   });
 
   document.getElementById('startRoundBtn')?.addEventListener('click', () => api.startRound());
+  document.getElementById('leaveBtn')?.addEventListener('click', () => api.leaveRoom());
 }
 
 function playerListHTML(players, submittedIds, socketId) {
