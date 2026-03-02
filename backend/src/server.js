@@ -12,12 +12,9 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { createApp } from './app.js';
 import { memoryStore } from './store/memoryStore.js';
-import { createRedisStore } from './store/redisStore.js';
 import { registerHandlers } from './api/socketHandlers.js';
 
-const store = process.env.REDIS_URL
-  ? createRedisStore(process.env.REDIS_URL)
-  : memoryStore;
+const store = memoryStore;
 
 const PORT = Number(process.env.PORT) || 3001;
 // In production set FRONTEND_URL to your deployed frontend origin.

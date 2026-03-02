@@ -20,7 +20,10 @@
       "Bash(cd /infrastructure/nambar/spyfall && timeout 4 /infrastructure/nambar/nodejs/bin/node backend/src/server.js 2>&1 || true)",
       "Bash(/infrastructure/nambar/nodejs/bin/npm run build 2>&1 | tail -5)",
       "Bash(/infrastructure/nambar/nodejs/bin/npm run build 2>&1 | tail -4)",
-      "Bash(git push 2>&1)"
+      "Bash(git push 2>&1)",
+      "Bash(git add backend/src/api/socketHandlers.js backend/src/core/gameLogic.js backend/src/store/memoryStore.js backend/src/store/redisStore.js frontend/src/main.js frontend/src/pages/game.js frontend/src/pages/home.js frontend/src/pages/lobby.js frontend/src/pages/reveal.js frontend/src/pages/submission.js frontend/src/session.js frontend/src/socket.js frontend/src/state.js frontend/src/style.css CLAUDE.md)",
+      "Bash(git commit -m \"$\\(cat <<'EOF'\nRemove host concept, add live room list, 15-min inactivity timer\n\n- Any player can now start the game, reveal, and play again — no host\n- Home page shows a live list of open rooms; players join by clicking,\n  no link sharing needed \\(removes the mobile link-drop bug\\)\n- Replace host/player disconnect timers with a single 15-min inactivity\n  timer that fires only when every player in a room is offline\n- Add listRooms\\(\\) to memoryStore and redisStore; broadcast roomList to\n  all sockets on every room state change\n- Remove URL-based routing \\(pushState / popstate / getUrlCode\\)\n- Role card no longer uses red/green border — both roles look identical\n  from a distance; colored pill is only legible up close\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push)"
     ]
   }
 }
