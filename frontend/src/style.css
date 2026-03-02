@@ -115,6 +115,14 @@ button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
   padding: .7rem;
 }
 .btn-primary:hover:not(:disabled) { background: #6d28d9; }
+.btn-primary.btn-armed { background: var(--danger); animation: armPulse .25s ease; }
+.btn-primary.btn-armed:hover { background: #b91c1c; }
+
+@keyframes armPulse {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.03); }
+  100% { transform: scale(1); }
+}
 
 .btn-secondary {
   background: var(--surface-2);

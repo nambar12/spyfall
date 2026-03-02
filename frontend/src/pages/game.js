@@ -99,7 +99,34 @@ export function renderGame(container, state) {
   document.getElementById('voteYes')?.addEventListener('click', () => api.castVote('yes'));
   document.getElementById('voteNo')?.addEventListener('click', () => api.castVote('no'));
 
-  document.getElementById('revealBtn').addEventListener('click', () => api.revealRound());
+  // Two-step confirm: first tap arms the button, second tap fires.
+  // Auto-reverts after 5 s if not confirmed.
+  let revealArmed = false;
+  let revealTimer = null;
+
+  function armReveal() {
+    revealArmed = true;
+    const btn = document.getElementById('revealBtn');
+    if (!btn) return;
+    btn.textContent = 'Tap again to confirm';
+    btn.classList.add('btn-armed');
+    revealTimer = setTimeout(disarmReveal, 5000);
+  }
+
+  function disarmReveal() {
+    revealArmed = false;
+    clearTimeout(revealTimer);
+    const btn = document.getElementById('revealBtn');
+    if (!btn) return;
+    btn.textContent = 'Reveal & End Round';
+    btn.classList.remove('btn-armed');
+  }
+
+  document.getElementById('revealBtn').addEventListener('click', () => {
+    if (revealArmed) { disarmReveal(); api.revealRound(); }
+    else armReveal();
+  });
+
   document.getElementById('leaveBtn').addEventListener('click', () => api.leaveRoom());
 }
 
