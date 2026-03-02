@@ -21,7 +21,7 @@ export function renderHome(container, state) {
       <!-- Step 1: name (shared by join and create) -->
       <div class="form-group name-step">
         <label for="playerName">Your name</label>
-        <input id="playerName" type="text" placeholder="e.g. Alice" maxlength="20" autocomplete="off" autofocus />
+        <input id="playerName" type="text" placeholder="e.g. Alice" maxlength="20" autocomplete="off" autofocus value="${escHtml(localStorage.getItem('playerName') ?? '')}" />
       </div>
 
       <!-- Step 2: join an existing room -->
@@ -68,6 +68,12 @@ export function renderHome(container, state) {
   `;
 
   renderRoomsList(state.rooms ?? []);
+
+  document.getElementById('playerName').addEventListener('input', (e) => {
+    const v = e.target.value.trim();
+    if (v) localStorage.setItem('playerName', v);
+    else localStorage.removeItem('playerName');
+  });
 
   function emitWhenReady(emit, btn) {
     if (btn) { btn.disabled = true; btn.textContent = 'Connecting…'; }
