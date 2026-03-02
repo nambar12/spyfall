@@ -25,6 +25,9 @@ import {
   revealRound,
   resetToLobby,
   toggleSuspicion,
+  initiateVote,
+  castVote,
+  resolveVote,
 } from '../core/gameLogic.js';
 
 // ---------------------------------------------------------------------------
@@ -96,6 +99,15 @@ function toPublicRoom(room) {
   if (room.phase === 'playing' || room.phase === 'reveal') {
     base.suspicions = room.round?.suspicions ?? {};
   }
+  if (room.vote) {
+    base.vote = {
+      accuserId: room.vote.accuserId,
+      accusedId: room.vote.accusedId,
+      votedIds:  Object.keys(room.vote.votes),
+      resolved:  room.vote.resolved,
+      result:    room.vote.result,
+    };
+  }
   if (room.phase === 'reveal') {
     base.reveal = {
       place:       room.round.place,
@@ -116,6 +128,46 @@ function broadcastRoundStart(io, room) {
     const a = room.round.assignments[player.id];
     if (a) io.to(player.id).emit('roleAssigned', a);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Vote resolution helpers (module-level so setTimeout callbacks can call them)
+// ---------------------------------------------------------------------------
+
+/** After the result animation delay, apply the vote's consequences. */
+async function applyVoteConsequences(code, io, store) {
+  try {
+    let room = await store.getRoom(code);
+    if (!room?.vote?.resolved) return; // already cleared (e.g. room restarted)
+
+    const { result, accusedId } = room.vote;
+    room = { ...room, vote: null };
+
+    if (result === 'spy_caught') {
+      room = revealRound(room);
+    } else if (result === 'wrong') {
+      room = removePlayer(room, accusedId);
+      if (room.players.length === 0) {
+        await store.deleteRoom(code);
+        broadcastRoomList(io, store);
+        return;
+      }
+    }
+    // 'failed': vote already cleared above
+
+    await store.setRoom(code, room);
+    broadcastRoomState(io, room);
+    broadcastRoomList(io, store);
+  } catch (e) { console.error('[applyVoteConsequences]', e.message); }
+}
+
+/** Attempt to resolve the vote; if resolved, broadcast and schedule consequences. */
+async function handleVoteCheck(code, room, io, store) {
+  const resolved = resolveVote(room);
+  if (!resolved) return;
+  await store.setRoom(code, resolved);
+  broadcastRoomState(io, resolved);
+  setTimeout(() => applyVoteConsequences(code, io, store), 3500);
 }
 
 // ---------------------------------------------------------------------------
@@ -308,6 +360,40 @@ export function registerHandlers(io, socket, store) {
   }));
 
   // -------------------------------------------------------------------------
+  // Initiate a vote
+  // -------------------------------------------------------------------------
+  socket.on('initiateVote', safe(async ({ accusedId } = {}) => {
+    if (!accusedId) return;
+    let room = await getRoom();
+    if (room.phase !== 'playing') return;
+    if (room.vote) throw new Error('A vote is already in progress');
+    if (accusedId === socket.id) throw new Error('Cannot accuse yourself');
+    if (!room.players.find((p) => p.id === accusedId && p.connected)) throw new Error('Player not found');
+
+    room = initiateVote(room, socket.id, accusedId);
+    await store.setRoom(room.code, room);
+    broadcastRoomState(io, room);
+    // Accuser auto-voted yes — might already be majority in tiny rooms.
+    await handleVoteCheck(room.code, room, io, store);
+  }));
+
+  // -------------------------------------------------------------------------
+  // Cast a vote
+  // -------------------------------------------------------------------------
+  socket.on('castVote', safe(async ({ choice } = {}) => {
+    if (choice !== 'yes' && choice !== 'no') return;
+    let room = await getRoom();
+    if (room.phase !== 'playing' || !room.vote || room.vote.resolved) return;
+    if (socket.id === room.vote.accusedId) return; // accused cannot vote
+    if (room.vote.votes[socket.id] !== undefined) return; // already voted
+
+    room = castVote(room, socket.id, choice);
+    await store.setRoom(room.code, room);
+    broadcastRoomState(io, room);
+    await handleVoteCheck(room.code, room, io, store);
+  }));
+
+  // -------------------------------------------------------------------------
   // Leave room  (explicit, voluntary exit)
   // -------------------------------------------------------------------------
   socket.on('leaveRoom', safe(async () => {
@@ -321,7 +407,12 @@ export function registerHandlers(io, socket, store) {
     socket.data.roomCode = null;
     socket.emit('leftRoom');
 
-    const remaining = removePlayer(room, socket.id);
+    let remaining = removePlayer(room, socket.id);
+
+    // If the accused leaves, cancel the vote.
+    if (remaining.vote && remaining.vote.accusedId === socket.id) {
+      remaining = { ...remaining, vote: null };
+    }
 
     if (remaining.players.length === 0) {
       await store.deleteRoom(code);
@@ -330,6 +421,10 @@ export function registerHandlers(io, socket, store) {
       broadcastRoomState(io, remaining);
       if (!remaining.players.some((p) => p.connected)) {
         scheduleInactivityDelete(code, io, store);
+      }
+      // A voter leaving might tip a pending vote to resolution.
+      if (remaining.vote && !remaining.vote.resolved) {
+        await handleVoteCheck(code, remaining, io, store);
       }
     }
     broadcastRoomList(io, store);
@@ -349,13 +444,18 @@ export function registerHandlers(io, socket, store) {
       const player = room.players.find((p) => p.id === socket.id);
       if (!player) return;
 
-      const updated = setPlayerConnected(room, socket.id, false);
+      let updated = setPlayerConnected(room, socket.id, false);
       await store.setRoom(code, updated);
       broadcastRoomState(io, updated);
       broadcastRoomList(io, store);
 
       if (!updated.players.some((p) => p.connected)) {
         scheduleInactivityDelete(code, io, store);
+      }
+
+      // A disconnecting voter might change vote majority — re-check.
+      if (updated.vote && !updated.vote.resolved) {
+        await handleVoteCheck(code, updated, io, store);
       }
     } catch (err) {
       console.error('[disconnect]', err.message);

@@ -111,6 +111,61 @@ export function beginRound(room) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Vote
+// ---------------------------------------------------------------------------
+
+/** Start a vote: accuser's yes is recorded immediately. */
+export function initiateVote(room, accuserId, accusedId) {
+  return {
+    ...room,
+    vote: { accuserId, accusedId, votes: { [accuserId]: 'yes' }, resolved: false, result: null },
+  };
+}
+
+/** Record one player's vote choice. */
+export function castVote(room, voterId, choice) {
+  return {
+    ...room,
+    vote: { ...room.vote, votes: { ...room.vote.votes, [voterId]: choice } },
+  };
+}
+
+/**
+ * Check whether the vote can be resolved now.
+ * Returns the updated room (with resolved vote) or null if still pending.
+ */
+export function resolveVote(room) {
+  const { vote, players } = room;
+  if (!vote || vote.resolved) return null;
+
+  // Only connected non-accused players vote.
+  const voters = players.filter((p) => p.connected && p.id !== vote.accusedId);
+  const total   = voters.length;
+
+  if (total === 0) {
+    return { ...room, vote: { ...vote, resolved: true, result: 'failed' } };
+  }
+
+  const yesCount = Object.values(vote.votes).filter((v) => v === 'yes').length;
+  const noCount  = Object.values(vote.votes).filter((v) => v === 'no').length;
+  const majority = Math.floor(total / 2) + 1;
+
+  let result = null;
+  if (yesCount >= majority) {
+    result = room.round?.assignments?.[vote.accusedId]?.role === 'spy' ? 'spy_caught' : 'wrong';
+  } else if (noCount >= majority || yesCount + noCount >= total) {
+    result = 'failed';
+  }
+
+  if (!result) return null;
+  return { ...room, vote: { ...vote, resolved: true, result } };
+}
+
+// ---------------------------------------------------------------------------
+// Suspicion
+// ---------------------------------------------------------------------------
+
 /**
  * Toggle one player's suspicion of another.
  * suspicions: { suspectorId: [targetId, ...] }
@@ -134,7 +189,7 @@ export function revealRound(room) {
 
 /** Reset back to the lobby for a new round. */
 export function resetToLobby(room) {
-  return { ...room, phase: 'lobby', round: null };
+  return { ...room, phase: 'lobby', round: null, vote: null };
 }
 
 /**
@@ -162,6 +217,12 @@ export function remapPlayerId(room, oldId, newId) {
     players: room.players.map((p) =>
       p.id === oldId ? { ...p, id: newId, connected: true } : p,
     ),
+    vote: room.vote ? {
+      ...room.vote,
+      accuserId: room.vote.accuserId === oldId ? newId : room.vote.accuserId,
+      accusedId: room.vote.accusedId === oldId ? newId : room.vote.accusedId,
+      votes:     remapObj(room.vote.votes),
+    } : room.vote,
     round: room.round
       ? {
           ...room.round,
