@@ -24,16 +24,24 @@ This guide sets up a single `t3.micro` EC2 instance that:
 
 ---
 
-## 2. Allocate an Elastic IP (fixed address)
+## 2. Set up a free hostname with Duck DNS
 
-Without an Elastic IP the public IP changes every time the instance starts.
+Without a fixed address the instance IP changes on every start. Duck DNS gives
+you a permanent hostname (e.g. `http://myspyfall.duckdns.org`) for free, and
+the wake Lambda updates it automatically each time it starts the instance.
 
-1. EC2 → **Elastic IPs** → **Allocate Elastic IP address** → Allocate
-2. Select the new address → **Actions → Associate Elastic IP**
-3. Choose your instance → Associate
+1. Go to [duckdns.org](https://duckdns.org) and sign in (Google / GitHub)
+2. Pick a subdomain, e.g. `myspyfall` → **Add domain**
+3. Copy your **token** from the top of the page
+4. Set these env vars on the Lambda (Configuration → Environment variables):
+   - `DUCKDNS_DOMAIN` = `myspyfall`
+   - `DUCKDNS_TOKEN` = your token
 
-Your game will always be reachable at this IP (e.g. `http://54.1.2.3`).
-Cost: free while the instance is running, ~$0.005/hr while stopped.
+The wake Lambda will call Duck DNS on every start and the `hostname` field in
+the response will confirm the update. DNS propagates in seconds.
+
+> **Skip this if you prefer a fixed IP**: allocate an Elastic IP in EC2
+> (free while running, ~$0.005/hr while stopped) and skip the Duck DNS vars.
 
 ---
 
@@ -185,7 +193,7 @@ aws ec2 stop-instances --instance-ids i-0abc123def456789
 |----------|------|
 | t3.micro (running) | ~$0.0104/hr (~$7.50/mo if on 24/7) |
 | t3.micro (stopped) | $0/hr |
-| Elastic IP (stopped) | ~$0.005/hr |
+| Duck DNS hostname | free |
 | Lambda invocations | essentially free |
 | EBS 8 GB gp3 | ~$0.64/mo |
 

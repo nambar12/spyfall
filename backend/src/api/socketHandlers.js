@@ -258,7 +258,7 @@ export function registerHandlers(io, socket, store) {
 
     // ── New player path ────────────────────────────────────────────────
     if (room.phase !== 'lobby') throw new Error('Game already in progress');
-    if (room.players.length >= 12) throw new Error('Room is full (max 12 players)');
+    if (room.players.length >= 20) throw new Error('Room is full (max 20 players)');
 
     room = addPlayer(room, { id: socket.id, name: trimmedName });
     await store.setRoom(upperCode, room);

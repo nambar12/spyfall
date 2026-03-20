@@ -1,15 +1,20 @@
 /**
  * AWS Lambda – Wake/status function for the SpyFall EC2 instance.
  *
- * Deploy with a Lambda Function URL (auth: NONE) so it's a simple bookmark.
  * Set these environment variables on the Lambda:
- *   INSTANCE_ID  – e.g. i-0abc123def456789
- *   REGION       – e.g. us-east-1
- *   SECRET_TOKEN – any random string; callers must pass ?token=<SECRET_TOKEN>
- *                  (omit/leave blank to disable the check in a private network)
+ *   INSTANCE_ID     – e.g. i-0abc123def456789
+ *   REGION          – e.g. us-east-1
+ *   SECRET_TOKEN    – any random string; callers must pass ?token=<SECRET_TOKEN>
+ *                     (omit/leave blank to disable the check)
+ *   DUCKDNS_DOMAIN  – subdomain only, e.g. "myspyfall" (optional)
+ *   DUCKDNS_TOKEN   – token from duckdns.org (optional)
+ *
+ * When DUCKDNS_DOMAIN + DUCKDNS_TOKEN are set, the start action automatically
+ * updates the DNS record so http://myspyfall.duckdns.org always points to the
+ * current instance IP — no Elastic IP needed.
  *
  * Endpoints (all GET):
- *   ?action=start   – start the instance, return its public IP once running
+ *   ?action=start   – start the instance, update DNS, return hostname
  *   ?action=status  – return current state + public IP (default)
  *   ?action=stop    – stop the instance (use rarely – idle-shutdown handles this)
  */
@@ -24,6 +29,17 @@ import {
 const ec2 = new EC2Client({ region: process.env.REGION ?? 'us-east-1' });
 const INSTANCE_ID = process.env.INSTANCE_ID;
 const SECRET_TOKEN = process.env.SECRET_TOKEN ?? '';
+const DUCKDNS_DOMAIN = process.env.DUCKDNS_DOMAIN ?? '';
+const DUCKDNS_TOKEN = process.env.DUCKDNS_TOKEN ?? '';
+
+async function updateDuckDns(ip) {
+  if (!DUCKDNS_DOMAIN || !DUCKDNS_TOKEN) return null;
+  const url = `https://www.duckdns.org/update?domains=${DUCKDNS_DOMAIN}&token=${DUCKDNS_TOKEN}&ip=${ip}`;
+  const res = await fetch(url);
+  const text = await res.text();
+  if (text.trim() !== 'OK') throw new Error(`Duck DNS update failed: ${text}`);
+  return `${DUCKDNS_DOMAIN}.duckdns.org`;
+}
 
 function json(statusCode, body) {
   return {
@@ -65,7 +81,10 @@ export const handler = async (event) => {
       for (let i = 0; i < 20; i++) {
         await new Promise((r) => setTimeout(r, 3000));
         const info = await getInstanceInfo();
-        if (info.publicIp) return json(200, { action, ...info });
+        if (info.publicIp) {
+          const hostname = await updateDuckDns(info.publicIp);
+          return json(200, { action, ...info, hostname });
+        }
       }
       // Return even if IP not yet assigned.
       return json(200, { action, ...(await getInstanceInfo()) });
