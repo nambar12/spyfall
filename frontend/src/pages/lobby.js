@@ -23,7 +23,7 @@ export function renderLobby(container, state) {
 
       <!-- Players -->
       <div class="section card">
-        <h3 class="section-header">Players (${room.players.length} / 12)</h3>
+        <h3 class="section-header">Players (${room.players.length} / 20)</h3>
         <ul class="player-list">
           ${room.players.map((p) => `
             <li>
