@@ -94,7 +94,11 @@ export function beginRound(room) {
   // Guard: at least 1 innocent must remain.
   const actualSpyCount = Math.min(config.spyCount, spyPool.length - 1);
 
-  const shuffled = [...spyPool].sort(() => Math.random() - 0.5);
+  const shuffled = [...spyPool];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
   const spyIds = new Set(shuffled.slice(0, actualSpyCount).map((p) => p.id));
 
   const assignments = Object.fromEntries(
